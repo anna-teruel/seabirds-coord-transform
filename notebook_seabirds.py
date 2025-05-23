@@ -8,6 +8,12 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 
+%matplotlib widget
+
+# TODO next:
+# - scale by boat width
+# - define ROI?
+
 # %%
 data_dir = Path("/Users/sofia/swc/project_seabirds/data")
 filepath = data_dir / "scaled_video3DLC_DekrW32_seabirdApr22shuffle1_snapshot_140_el.h5"
@@ -93,7 +99,7 @@ ds_birds = load_poses.from_numpy(
     confidence_array=confidence_array,
     individual_names=list_individuals,
     keypoint_names=list_keypoints,
-    fps=30,
+    # fps=30,
 )
 
 # export for importable in napari
@@ -114,11 +120,11 @@ ds_boat = load_poses.from_numpy(
     confidence_array=confidence_array,
     individual_names=list_individuals,
     keypoint_names=list_keypoints,
-    fps=30,
+    # fps=30,
 )
 
 # export for importable in napari
-save_poses.to_dlc_file(ds_boat, filepath.parent / (filepath.stem + "_boat.h5"))
+save_poses.to_dlc_file(ds_boat, filepath.parent / (filepath.stem + "_boat.h5"), split_individuals=False)
 
 # %%
 # Express coordinates in BCS (boat coordinate system)
@@ -196,35 +202,53 @@ boat_position_BCS = boat_position_3d_BCS.drop_sel(space="z")
 
 fig, ax = plt.subplots(1, 1)
 
+time_slice = slice(0,654)
+
 cmap = plt.get_cmap("turbo")
 color_array = cmap(np.linspace(0, 1, len(birds_position_BCS.individuals)))
 
 for i, ind in enumerate(birds_position_BCS.individuals):
     # birds
     ax.scatter(
-        birds_position_BCS.sel(individuals=ind, space="x").mean("keypoints"),
-        birds_position_BCS.sel(individuals=ind, space="y").mean("keypoints"),
+        birds_position_BCS.sel(time=time_slice, individuals=ind, space="x").mean("keypoints"),
+        birds_position_BCS.sel(time=time_slice, individuals=ind, space="y").mean("keypoints"),
         5,
         color=color_array[i],
     )
 
 # plot boat centroid
 sc = ax.scatter(
-    boat_position_BCS.sel(space="x").mean("keypoints"),
-    boat_position_BCS.sel(space="y").mean("keypoints"),
+    boat_position_BCS.sel(time=time_slice, space="x").mean("keypoints"),
+    boat_position_BCS.sel(time=time_slice, space="y").mean("keypoints"),
     3,
-    c=np.arange(boat_position_BCS.shape[0]),
+    c=np.arange(time_slice.stop+1),
     cmap="viridis",
 )
 
-
-
-# plot boat centroid
+# plot boat tip
 ax.scatter(
-    boat_position_BCS.sel(keypoints="boatTip", space="x"),
-    boat_position_BCS.sel(keypoints="boatTip", space="y"),
+    boat_position_BCS.sel(time=time_slice, keypoints="boatTip", space="x"),
+    boat_position_BCS.sel(time=time_slice, keypoints="boatTip", space="y"),
     3,
-    c=np.arange(boat_position_BCS.shape[0]),
+    c=np.arange(time_slice.stop+1),
+    cmap="viridis",
+)
+
+# plot boat tip
+ax.scatter(
+    boat_position_BCS.sel(time=time_slice, keypoints="boatBL", space="x"),
+    boat_position_BCS.sel(time=time_slice, keypoints="boatBL", space="y"),
+    3,
+    c=np.arange(time_slice.stop+1),
+    cmap="viridis",
+)
+
+# plot boat tip
+ax.scatter(
+    boat_position_BCS.sel(time=time_slice, keypoints="boatBR", space="x"),
+    boat_position_BCS.sel(time=time_slice, keypoints="boatBR", space="y"),
+    3,
+    c=np.arange(time_slice.stop+1),
     cmap="viridis",
 )
 
