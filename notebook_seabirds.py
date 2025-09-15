@@ -8,20 +8,29 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 
+
+# %%
+# For interactive plots: install ipympl with `pip install ipympl` and uncomment
+# the following line in your notebook
+# %matplotlib widget
 %matplotlib widget
 
 # TODO next:
+# - add x-axis flip
 # - scale by boat width
 # - define ROI?
 
-# %%
+# %%%%%%%%%%%%%%%%%
+# Input data paths
 data_dir = Path("/Users/sofia/swc/project_seabirds/data")
 filepath = data_dir / "scaled_video3DLC_DekrW32_seabirdApr22shuffle1_snapshot_140_el.h5"
 
 
-# %%
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Helper functions
+
 def get_data_for_load_from_numpy(df):
-    """Get array from df to load "from numpy" """
+    """Get array from dataframe to use "from numpy" function"""
     list_individuals = sorted(df.columns.get_level_values("individuals").unique())
     list_keypoints = sorted(df.columns.get_level_values("bodyparts").unique())
     n_keypoints = len(list_keypoints)
@@ -56,15 +65,18 @@ def get_data_for_load_from_numpy(df):
 
 
 def compute_rotation_to_align_y_axis(vec):
-    rrot, rssd = R.align_vectors(
+    """Compute rotation to align y-axis"""
+    rrot, _rssd = R.align_vectors(
         np.array([[0, 1, 0]]),  # Vector components observed in initial frame A
         vec,  # Vector components observed in another frame B
         return_sensitivity=False,
     )
+
     return rrot
 
 
 def add_z_coord_to_position_array(position_array):
+    """Add z coordinate to position array"""
     return xr.concat(
         [
             position_array,
@@ -77,16 +89,16 @@ def add_z_coord_to_position_array(position_array):
     )
 
 
-# %%
-# Read as pandas dataframe
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Read input data as pandas dataframe
 if str(filepath).endswith(".h5"):
     df = pd.read_hdf(filepath)
 else:
     df = pd.read_csv(filepath)
 
 
-# %%
-# Get dataset for birds only
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Get dataset with bird data only
 columns_to_drop = [col for col in df.columns if "single" in col]
 df_birds = df.drop(columns=columns_to_drop)
 
@@ -102,11 +114,13 @@ ds_birds = load_poses.from_numpy(
     # fps=30,
 )
 
-# export for importable in napari
+# export to file importable in napari
+# To visualise exported file, follow this guide:
+# https://movement.neuroinformatics.dev/user_guide/gui.html
 save_poses.to_dlc_file(ds_birds, filepath.parent / (filepath.stem + "_birds.h5"))
 
-# %%
-# Get dataset for boat only
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Get dataset with boat data only
 columns_to_drop = [col for col in df.columns if "bird" in col[1]]
 df_boat = df.drop(columns=columns_to_drop)
 
@@ -126,14 +140,16 @@ ds_boat = load_poses.from_numpy(
 # export for importable in napari
 save_poses.to_dlc_file(ds_boat, filepath.parent / (filepath.stem + "_boat.h5"), split_individuals=False)
 
-# %%
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Express coordinates in BCS (boat coordinate system)
-# origin : boat centroid
-# y-axis: centroid to tip
-# x-axis: points to left side of the boat (bc it is a rotation from ICS)
+# - origin : centroid of all boat keypoints per frame
+# - y-axis: vector from boat centroid to tip keypoint
+# - x-axis: perpendicular to y-axis, points to left side of the boat 
+#   (it is a rotation from the image coordinate system (ICS))
 
-# Note: we need to flip the x-coord because the ICS will never rotate to be the "classic plot" 
-# coordinate system
+# Note: we need to flip the x-coord to match the "classic plot" 
+# coordinate system (x-axis from left to right, y-axis from bottom to top).
+# We cannot rotate the ICS into the "classic plot", it needs a flip of the x-axis.
 
 # compute origin
 boat_position = ds_boat.position
@@ -151,9 +167,7 @@ boat_y_axis_3d = (
 boat_centroid_3d = boat_centroid_3d.drop_vars("individuals").squeeze()
 boat_y_axis_3d = boat_y_axis_3d.drop_vars("individuals").squeeze()
 
-
-# %%
-# compute rotation to y-axis
+# compute rotation from ICS y-axis to BCS y-axis
 rotation2boat = xr.apply_ufunc(
     lambda v: compute_rotation_to_align_y_axis(v),
     boat_y_axis_3d,
@@ -163,8 +177,8 @@ rotation2boat = xr.apply_ufunc(
 
 # rotation2boat = rotation2boat.drop_vars("individuals").squeeze()
 
-# %%
-# compute keypoints in ECS (translated and rotated)
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Compute bird keypoints in BCS (translated and rotated)
 birds_position_3d = add_z_coord_to_position_array(ds_birds.position)
 
 birds_position_3d_BCS = xr.apply_ufunc(
@@ -180,7 +194,7 @@ birds_position_3d_BCS = xr.apply_ufunc(
 # drop z coordinate
 birds_position_BCS = birds_position_3d_BCS.drop_sel(space="z")
 
-# %%
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Apply same transform to boat points
 boat_position_3d_BCS = xr.apply_ufunc(
     lambda rot, trans, vec: rot.apply(vec - trans),
@@ -197,63 +211,56 @@ boat_position_3d_BCS = xr.apply_ufunc(
 # drop z coordinate
 boat_position_BCS = boat_position_3d_BCS.drop_sel(space="z")
 
-# %%
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Plot data in BCS
+
+# Select a time slice for clarity (frames 0 to 654)
+time_slice = slice(0,654)
 
 fig, ax = plt.subplots(1, 1)
 
-time_slice = slice(0,654)
-
-cmap = plt.get_cmap("turbo")
-color_array = cmap(np.linspace(0, 1, len(birds_position_BCS.individuals)))
+# plot bird data and color by individual
+cmap = plt.get_cmap("tab10")
+color_array = cmap(np.arange(len(birds_position_BCS.individuals)))
 
 for i, ind in enumerate(birds_position_BCS.individuals):
-    # birds
+    # bird centroids
     ax.scatter(
         birds_position_BCS.sel(time=time_slice, individuals=ind, space="x").mean("keypoints"),
         birds_position_BCS.sel(time=time_slice, individuals=ind, space="y").mean("keypoints"),
         5,
         color=color_array[i],
+        label=ind.item(),
     )
+
+ax.legend(loc="upper right", bbox_to_anchor=(1.02, 1))
 
 # plot boat centroid
 sc = ax.scatter(
     boat_position_BCS.sel(time=time_slice, space="x").mean("keypoints"),
     boat_position_BCS.sel(time=time_slice, space="y").mean("keypoints"),
-    3,
+    10,
     c=np.arange(time_slice.stop+1),
-    cmap="viridis",
+    cmap="plasma",
+    marker="*",
 )
 
-# plot boat tip
-ax.scatter(
-    boat_position_BCS.sel(time=time_slice, keypoints="boatTip", space="x"),
-    boat_position_BCS.sel(time=time_slice, keypoints="boatTip", space="y"),
-    3,
-    c=np.arange(time_slice.stop+1),
-    cmap="viridis",
-)
+# plot boat keypoints in time
+for boat_keypoint in ["boatTip", "boatBL", "boatBR"]:
+    ax.scatter(
+        boat_position_BCS.sel(time=time_slice, keypoints=boat_keypoint, space="x"),
+        boat_position_BCS.sel(time=time_slice, keypoints=boat_keypoint, space="y"),
+        10,
+        c=np.arange(time_slice.stop+1),
+        cmap="plasma",
+    )
 
-# plot boat tip
-ax.scatter(
-    boat_position_BCS.sel(time=time_slice, keypoints="boatBL", space="x"),
-    boat_position_BCS.sel(time=time_slice, keypoints="boatBL", space="y"),
-    3,
-    c=np.arange(time_slice.stop+1),
-    cmap="viridis",
-)
-
-# plot boat tip
-ax.scatter(
-    boat_position_BCS.sel(time=time_slice, keypoints="boatBR", space="x"),
-    boat_position_BCS.sel(time=time_slice, keypoints="boatBR", space="y"),
-    3,
-    c=np.arange(time_slice.stop+1),
-    cmap="viridis",
-)
-
-# ax.invert_yaxis()
 ax.set_xlabel("x_BCS (pixels)")
 ax.set_ylabel("y_BCS (pixels)")
 ax.set_aspect("equal")
+
+# add colorbar
+cbar = fig.colorbar(sc, ax=ax)
+cbar.set_label("frames")
+
 # %%
