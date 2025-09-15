@@ -7,27 +7,24 @@ import xarray as xr
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
-
+import glob
 
 # %%
 # For interactive plots: install ipympl with `pip install ipympl` and uncomment
 # the following line in your notebook
 # %matplotlib widget
-%matplotlib widget
+# %matplotlib widget
 
-# TODO next:
-# - add x-axis flip
-# - scale by boat width
-# - define ROI?
-
-# %%%%%%%%%%%%%%%%%
+# %%
 # Input data paths
-data_dir = Path("/Users/sofia/swc/project_seabirds/data")
+notebook_path = Path(glob.glob("notebook_seabirds.ipynb")[0]).resolve()
+data_dir = notebook_path.parent / "data"
 filepath = data_dir / "scaled_video3DLC_DekrW32_seabirdApr22shuffle1_snapshot_140_el.h5"
 
 
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# %%
 # Helper functions
+
 
 def get_data_for_load_from_numpy(df):
     """Get array from dataframe to use "from numpy" function"""
@@ -89,7 +86,7 @@ def add_z_coord_to_position_array(position_array):
     )
 
 
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# %%
 # Read input data as pandas dataframe
 if str(filepath).endswith(".h5"):
     df = pd.read_hdf(filepath)
@@ -97,7 +94,7 @@ else:
     df = pd.read_csv(filepath)
 
 
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# %%
 # Get dataset with bird data only
 columns_to_drop = [col for col in df.columns if "single" in col]
 df_birds = df.drop(columns=columns_to_drop)
@@ -119,7 +116,7 @@ ds_birds = load_poses.from_numpy(
 # https://movement.neuroinformatics.dev/user_guide/gui.html
 save_poses.to_dlc_file(ds_birds, filepath.parent / (filepath.stem + "_birds.h5"))
 
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# %%
 # Get dataset with boat data only
 columns_to_drop = [col for col in df.columns if "bird" in col[1]]
 df_boat = df.drop(columns=columns_to_drop)
@@ -138,18 +135,21 @@ ds_boat = load_poses.from_numpy(
 )
 
 # export for importable in napari
-save_poses.to_dlc_file(ds_boat, filepath.parent / (filepath.stem + "_boat.h5"), split_individuals=False)
+save_poses.to_dlc_file(
+    ds_boat, filepath.parent / (filepath.stem + "_boat.h5"), split_individuals=False
+)
 
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# %%
 # Express coordinates in BCS (boat coordinate system)
 # - origin : centroid of all boat keypoints per frame
 # - y-axis: vector from boat centroid to tip keypoint
-# - x-axis: perpendicular to y-axis, points to left side of the boat 
+# - x-axis: perpendicular to y-axis, points to left side of the boat
 #   (it is a rotation from the image coordinate system (ICS))
 
-# Note: we need to flip the x-coord to match the "classic plot" 
+# Note: we need to flip the x-coord to match the "classic plot"
 # coordinate system (x-axis from left to right, y-axis from bottom to top).
-# We cannot rotate the ICS into the "classic plot", it needs a flip of the x-axis.
+# We cannot rotate the ICS into the "classic plot", it needs a flip of
+# the x-axis.
 
 # compute origin
 boat_position = ds_boat.position
@@ -177,7 +177,7 @@ rotation2boat = xr.apply_ufunc(
 
 # rotation2boat = rotation2boat.drop_vars("individuals").squeeze()
 
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# %%
 # Compute bird keypoints in BCS (translated and rotated)
 birds_position_3d = add_z_coord_to_position_array(ds_birds.position)
 
@@ -194,7 +194,7 @@ birds_position_3d_BCS = xr.apply_ufunc(
 # drop z coordinate
 birds_position_BCS = birds_position_3d_BCS.drop_sel(space="z")
 
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# %%
 # Apply same transform to boat points
 boat_position_3d_BCS = xr.apply_ufunc(
     lambda rot, trans, vec: rot.apply(vec - trans),
@@ -206,16 +206,14 @@ boat_position_3d_BCS = xr.apply_ufunc(
     vectorize=True,
 )
 
-
-
 # drop z coordinate
 boat_position_BCS = boat_position_3d_BCS.drop_sel(space="z")
 
-# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# %%
 # Plot data in BCS
 
 # Select a time slice for clarity (frames 0 to 654)
-time_slice = slice(0,654)
+time_slice = slice(0, 654)
 
 fig, ax = plt.subplots(1, 1)
 
@@ -226,8 +224,12 @@ color_array = cmap(np.arange(len(birds_position_BCS.individuals)))
 for i, ind in enumerate(birds_position_BCS.individuals):
     # bird centroids
     ax.scatter(
-        birds_position_BCS.sel(time=time_slice, individuals=ind, space="x").mean("keypoints"),
-        birds_position_BCS.sel(time=time_slice, individuals=ind, space="y").mean("keypoints"),
+        birds_position_BCS.sel(time=time_slice, individuals=ind, space="x").mean(
+            "keypoints"
+        ),
+        birds_position_BCS.sel(time=time_slice, individuals=ind, space="y").mean(
+            "keypoints"
+        ),
         5,
         color=color_array[i],
         label=ind.item(),
@@ -240,7 +242,7 @@ sc = ax.scatter(
     boat_position_BCS.sel(time=time_slice, space="x").mean("keypoints"),
     boat_position_BCS.sel(time=time_slice, space="y").mean("keypoints"),
     10,
-    c=np.arange(time_slice.stop+1),
+    c=np.arange(time_slice.stop + 1),
     cmap="plasma",
     marker="*",
 )
@@ -251,7 +253,7 @@ for boat_keypoint in ["boatTip", "boatBL", "boatBR"]:
         boat_position_BCS.sel(time=time_slice, keypoints=boat_keypoint, space="x"),
         boat_position_BCS.sel(time=time_slice, keypoints=boat_keypoint, space="y"),
         10,
-        c=np.arange(time_slice.stop+1),
+        c=np.arange(time_slice.stop + 1),
         cmap="plasma",
     )
 
