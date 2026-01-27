@@ -13,13 +13,14 @@ import glob
 # For interactive plots: install ipympl with `pip install ipympl` and uncomment
 # the following line in your notebook
 # %matplotlib widget
-# %matplotlib widget
 
 # %%
 # Input data paths
 notebook_path = Path(glob.glob("notebook_seabirds.ipynb")[0]).resolve()
-data_dir = notebook_path.parent / "data"
-filepath = data_dir / "scaled_video3DLC_DekrW32_seabirdApr22shuffle1_snapshot_140_el.h5"
+data_dir = notebook_path.parent / "data" / "second-iter"
+filepath = (
+    data_dir / "FILE00009_sDLC_DekrW32_seabirdNov6shuffle1_snapshot_170_el_filtered.h5"
+)
 
 
 # %%
@@ -88,56 +89,59 @@ def add_z_coord_to_position_array(position_array):
 
 # %%
 # Read input data as pandas dataframe
-if str(filepath).endswith(".h5"):
-    df = pd.read_hdf(filepath)
-else:
-    df = pd.read_csv(filepath)
+df = pd.read_hdf(filepath)
 
 
 # %%
 # Get dataset with bird data only
-columns_to_drop = [col for col in df.columns if "single" in col]
-df_birds = df.drop(columns=columns_to_drop)
+if (filepath.parent / (filepath.stem + "_birds.h5")).exists():
+    ds_birds = load_poses.from_dlc_file(filepath.parent / (filepath.stem + "_birds.h5"))
+else:
+    columns_to_drop = [col for col in df.columns if "single" in col]
+    df_birds = df.drop(columns=columns_to_drop)
 
-position_array, confidence_array, list_individuals, list_keypoints = (
-    get_data_for_load_from_numpy(df_birds)
-)
+    position_array, confidence_array, list_individuals, list_keypoints = (
+        get_data_for_load_from_numpy(df_birds)
+    )
 
-ds_birds = load_poses.from_numpy(
-    position_array=position_array,
-    confidence_array=confidence_array,
-    individual_names=list_individuals,
-    keypoint_names=list_keypoints,
-    # fps=30,
-)
+    ds_birds = load_poses.from_numpy(
+        position_array=position_array,
+        confidence_array=confidence_array,
+        individual_names=list_individuals,
+        keypoint_names=list_keypoints,
+        # fps=30,
+    )
 
-# export to file importable in napari
-# To visualise exported file, follow this guide:
-# https://movement.neuroinformatics.dev/user_guide/gui.html
-save_poses.to_dlc_file(ds_birds, filepath.parent / (filepath.stem + "_birds.h5"))
+    # export to file importable in napari
+    # To visualise exported file, follow this guide:
+    # https://movement.neuroinformatics.dev/user_guide/gui.html
+    save_poses.to_dlc_file(ds_birds, filepath.parent / (filepath.stem + "_birds.h5"))
 
 # %%
 # Get dataset with boat data only
-columns_to_drop = [col for col in df.columns if "bird" in col[1]]
-df_boat = df.drop(columns=columns_to_drop)
+if (filepath.parent / (filepath.stem + "_boat.h5")).exists():
+    ds_boat = load_poses.from_dlc_file(filepath.parent / (filepath.stem + "_boat.h5"))
+else:
+    columns_to_drop = [col for col in df.columns if "bird" in col[1]]
+    df_boat = df.drop(columns=columns_to_drop)
 
 
-position_array, confidence_array, list_individuals, list_keypoints = (
-    get_data_for_load_from_numpy(df_boat)
-)
+    position_array, confidence_array, list_individuals, list_keypoints = (
+        get_data_for_load_from_numpy(df_boat)
+    )
 
-ds_boat = load_poses.from_numpy(
-    position_array=position_array,
-    confidence_array=confidence_array,
-    individual_names=list_individuals,
-    keypoint_names=list_keypoints,
-    # fps=30,
-)
+    ds_boat = load_poses.from_numpy(
+        position_array=position_array,
+        confidence_array=confidence_array,
+        individual_names=list_individuals,
+        keypoint_names=list_keypoints,
+        # fps=30,
+    )
 
-# export for importable in napari
-save_poses.to_dlc_file(
-    ds_boat, filepath.parent / (filepath.stem + "_boat.h5"), split_individuals=False
-)
+    # export for importable in napari
+    save_poses.to_dlc_file(
+        ds_boat, filepath.parent / (filepath.stem + "_boat.h5"), split_individuals=False
+    )
 
 # %%
 # Express coordinates in BCS (boat coordinate system)
@@ -213,7 +217,7 @@ boat_position_BCS = boat_position_3d_BCS.drop_sel(space="z")
 # Plot data in BCS
 
 # Select a time slice for clarity (frames 0 to 654)
-time_slice = slice(0, 654)
+time_slice = slice(0, 1999)
 
 fig, ax = plt.subplots(1, 1)
 
@@ -242,7 +246,7 @@ sc = ax.scatter(
     boat_position_BCS.sel(time=time_slice, space="x").mean("keypoints"),
     boat_position_BCS.sel(time=time_slice, space="y").mean("keypoints"),
     10,
-    c=np.arange(time_slice.stop + 1),
+    c=np.arange((time_slice.stop - time_slice.start) + 1),
     cmap="plasma",
     marker="*",
 )
@@ -253,7 +257,7 @@ for boat_keypoint in ["boatTip", "boatBL", "boatBR"]:
         boat_position_BCS.sel(time=time_slice, keypoints=boat_keypoint, space="x"),
         boat_position_BCS.sel(time=time_slice, keypoints=boat_keypoint, space="y"),
         10,
-        c=np.arange(time_slice.stop + 1),
+        c=np.arange((time_slice.stop - time_slice.start) + 1),
         cmap="plasma",
     )
 
@@ -265,4 +269,6 @@ ax.set_aspect("equal")
 cbar = fig.colorbar(sc, ax=ax)
 cbar.set_label("frames")
 
+# put legend top left
+ax.legend(loc="upper left")
 # %%
