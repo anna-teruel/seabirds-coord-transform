@@ -46,6 +46,7 @@ min_n_frames_with_data = fps * 1  # per ID, for filtering out short trajectories
 savgol_window_size = 30  # fps=30
 savgol_poly_order = 1
 interp_method_reference = "akima"
+max_distance_to_smoothed = 3  # in m
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Helper functions
@@ -255,8 +256,6 @@ smoothed_position_interp = interpolate_over_time(
 
 # if distance between birds_position_BCS_m_split and  smoothed trajectory
 # is above threshold, set datapoints to nan
-max_distance_to_smoothed = 3  # in m
-
 distance_to_smoothed = compute_norm(
     birds_position_BCS_m_split - smoothed_position_interp
 )
@@ -276,7 +275,7 @@ birds_position_BCS_m_split_post.to_netcdf(
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Plot data
 # Select a time slice for clarity 
-time_slice = slice(0, 3000)
+time_slice = slice(0, 9000)
 
 fig, ax = plt.subplots(1, 1)
 
@@ -345,5 +344,5 @@ plot_centroid_trajectory(
 )
 ax.set_xlabel("x (m)")
 ax.set_ylabel("y (m)")
-ax.set_title("before removing data with 'jumps'")
+ax.set_title("after removing data with 'jumps'")
 # %%
