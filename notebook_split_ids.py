@@ -1,3 +1,12 @@
+"""A notebook to postprocess DLC trajectories in BCS.
+
+Requirements: following installation instructions for `movement`
+https://movement.neuroinformatics.dev/latest/user_guide/installation.html
+
+Then run this notebook in that conda environment.
+
+"""
+
 # %%
 
 import glob
@@ -10,6 +19,7 @@ import xarray as xr
 
 
 from movement.plots import plot_centroid_trajectory
+from movement.kinematics import compute_forward_displacement
 
 # Hide attributes globally
 xr.set_options(display_expand_attrs=False)
@@ -26,8 +36,8 @@ boat_netcdf = "boat_position_BCS_in_m.nc"
 birds_netcdf = "birds_position_BCS_in_m.nc"
 
 fps = 30  # frames per second (video)
-min_gap_size = 20  # in frames
-
+min_gap_size = 15  # in frames, for splitting IDs
+min_n_frames_with_data = fps * 15  # per ID, for filtering out short trajectories
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Helper functions
@@ -138,21 +148,26 @@ birds_position_BCS_m_split = (
 # Filter out short trajectories
 
 # Compute number of frames with at least one keypoint per id
-min_n_frames_with_data = fps * 15  # per ID,
-for individual, group in birds_position_BCS_m_split.groupby("individuals"):
-    # n_frames = group.time.nunique()
-    # Number of frames with any space coordinate on any kpt not nan
-    n_frames = (~group.isnull()).all(dim="space").any("keypoints").sum()
-    if n_frames < min_n_frames_with_data:
-        birds_position_BCS_m_split = birds_position_BCS_m_split.drop_sel(
-            individuals=individual
-        )
+valid_frames_per_id = (
+    birds_position_BCS_m_split.notnull()
+    .all(dim="space").any(dim="keypoints").sum(dim="time")
+)
+
+# filter
+birds_position_BCS_m_split = birds_position_BCS_m_split.sel(
+    individuals=valid_frames_per_id >= min_n_frames_with_data
+)
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Remove datapoints with a big jump
+
+# compute_forward_displacement(birds_position_BCS_m_split)
 
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Plot data
 # Select a time slice for clarity (frames 0 to 654)
-time_slice = slice(0, 1500)
+time_slice = slice(0, 3000)
 
 fig, ax = plt.subplots(1, 1)
 
@@ -162,33 +177,23 @@ n_individuals = len(birds_position_BCS_m_split.individuals)
 color_array = cmap(np.arange(n_individuals) % cmap.N)
 
 for i, ind in enumerate(birds_position_BCS_m_split.individuals):
+    # Get the data for this individual
+    x_data = birds_position_BCS_m_split.sel(time=time_slice, individuals=ind, space="x").mean("keypoints")
+    y_data = birds_position_BCS_m_split.sel(time=time_slice, individuals=ind, space="y").mean("keypoints")
+    
+    # Check if there's any non-NaN data
+    has_data = (~np.isnan(x_data)).any() and (~np.isnan(y_data)).any()
+    
     # bird centroids
     ax.scatter(
-        birds_position_BCS_m_split.sel(time=time_slice, individuals=ind, space="x").mean(
-            "keypoints"
-        ),
-        birds_position_BCS_m_split.sel(time=time_slice, individuals=ind, space="y").mean(
-            "keypoints"
-        ),
+        x_data,
+        y_data,
         5,
         color=color_array[i],
-        label=ind.item(),
+        label=ind.item() if has_data else None,  # Only label if has data
     )
 
-    # # add text label with ID at the end of the trajectory
-    # ax.text(
-    #     birds_position_BCS_m_split.sel(time=0.5*(time_slice.start+time_slice.stop), individuals=ind, space="x").mean(
-    #         "keypoints"
-    #     ),
-    #     birds_position_BCS_m_split.sel(time=0.5*(time_slice.start+time_slice.stop), individuals=ind, space="y").mean(
-    #         "keypoints"
-    #     ),
-    #     i,
-    # )
-
-# Can I have legend only for non-nan?
-# ax.legend(loc="upper right", bbox_to_anchor=(1.02, 1))
-
+ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1), markerscale=2)
 
 ax.set_xlabel("x_BCS (m)")
 ax.set_ylabel("y_BCS (m)")
@@ -202,10 +207,13 @@ ax.set_aspect("equal")
 # ax.legend(loc="upper left")
 
 # %%
-
+# Plot an individual bird over time
+plt.figure()
 plot_centroid_trajectory(
-    birds_position_BCS_m_split.sel(time=time_slice), individual="bird000"
+    birds_position_BCS_m_split.sel(time=time_slice), individual="bird022"
 )
+plt.xlabel('x (m)')
+plt.ylabel('y (m)')
 # %%
 %matplotlib widget
 
