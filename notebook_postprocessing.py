@@ -40,7 +40,7 @@ birds_netcdf = "birds_position_BCS_in_m.nc"
 # Postprocessing parameters
 fps = 30  # frames per second (video)
 min_gap_size = 15  # in frames, for splitting IDs
-min_n_frames_with_data = fps * 15  # per ID, for filtering out short trajectories
+min_n_frames_with_data = fps * 1  # per ID, for filtering out short trajectories
 
 # for defining reference smooth trajectory
 savgol_window_size = 30  # fps=30
@@ -276,7 +276,7 @@ birds_position_BCS_m_split_post.to_netcdf(
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Plot data
 # Select a time slice for clarity 
-time_slice = slice(0, 9000)
+time_slice = slice(0, 3000)
 
 fig, ax = plt.subplots(1, 1)
 
