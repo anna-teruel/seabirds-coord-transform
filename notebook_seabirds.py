@@ -341,19 +341,155 @@ ax.legend(loc="upper left")
 %matplotlib widget
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Split IDs
-from movement.filtering import filter_by_confidence
-from movement.plots import plot_centroid_trajectory
 
-birds_position_BCS_in_m_filt = filter_by_confidence(
-    birds_position_BCS_in_m, ds_birds.confidence, threshold=0.5
+# Since x and y are in separate rows, first check if BOTH are valid for each timepoint
+# Pivot to get x and y as columns temporarily for the validity check
+def add_segment_ids(df, min_gap_size=1):
+    """
+    Add segment IDs based on NaN gaps in position data.
+    
+    Parameters
+    ----------
+    df : DataFrame
+        The trajectory data
+    min_gap_size : int
+        Minimum number of consecutive NaN frames to trigger a split.
+        - min_gap_size=1: split on any NaN (default, strictest)
+        - min_gap_size=5: only split if gap is 5+ frames
+        - min_gap_size=10: tolerate gaps up to 9 frames
+    """
+    
+    segments = []
+    # Group by individual 
+    for individual, group in df.groupby(['individuals']):
+        # Pivot to get x and y side by side for this trajectory
+        # Check validity across ALL keypoints
+        pivoted = group.pivot_table(
+            index='time', 
+            columns=['keypoints', 'space'], 
+            values='position'
+        )
+        
+        # An observation is valid if ANY keypoint has BOTH x and y (i.e. non-NaN)
+        # Group columns by keypoint, Within each keypoint group, checks if all values 
+        # (both x AND y) are True
+        keypoint_valid = pivoted.notna().T.groupby(level='keypoints').all()
+        
+        # Then an ID is valid if at least one keypoint is fully tracked
+        is_valid = keypoint_valid.any(axis=1)  #.any(axis=1)
+        
+        # -----------------
+        segment_id = get_significant_gaps(is_valid, min_gap_size)
+        # ---------
+        
+        # Map segment IDs back to original rows
+        group = group.copy()
+        group['segment'] = group['time'].map(segment_id)
+        
+        # Optionally: filter out the NaN rows
+        # Q: without this, nan rows get a new ID? 
+        group = group[group['position'].notna()]
+        
+        segments.append(group)
+    
+    return pd.concat(segments, ignore_index=True)
+
+# %%
+def add_segment_ids(df, min_gap_size=1):
+    """
+    Add segment IDs based on NaN gaps in position data.
+    
+    Parameters
+    ----------
+    df : DataFrame
+        The trajectory data
+    min_gap_size : int
+        Minimum number of consecutive NaN frames to trigger a split.
+        - min_gap_size=1: split on any NaN (default, strictest)
+        - min_gap_size=5: only split if gap is 5+ frames
+        - min_gap_size=10: tolerate gaps up to 9 frames
+    """
+    
+    segments = []
+    
+    for (individual, keypoint), group in df.groupby(['individuals', 'keypoints']):
+        # Pivot to get x and y side by side
+        pivoted = group.pivot(index='time', columns='space', values='position')
+        
+        # A timepoint is valid only if BOTH x and y are non-NaN
+        is_valid = pivoted['x'].notna() & pivoted['y'].notna()
+        
+        # # Find gap lengths using run-length encoding
+        # # Create groups of consecutive True/False values
+        # validity_changes = is_valid.ne(is_valid.shift()).cumsum()
+        
+        # # For each run, check if it's a gap (invalid) and if it's long enough
+        # gap_lengths = is_valid.groupby(validity_changes).transform('size')
+        
+        # # Mark as "segment boundary" only if: invalid AND gap >= min_gap_size
+        # is_significant_gap = (~is_valid) & (gap_lengths >= min_gap_size)
+        
+        # # Create segment IDs: only increment on significant gaps
+        # # We want to increment when transitioning INTO a significant gap
+        # segment_id = is_significant_gap.ne(is_significant_gap.shift()).cumsum()
+        # # Adjust so segments with data get sequential IDs
+        # segment_id = ((~is_valid) & is_significant_gap).cumsum()
+
+        segment_id = get_significant_gaps(is_valid, min_gap_size)
+        
+        # Map segment IDs back to original rows
+        group = group.copy()
+        group['segment'] = group['time'].map(segment_id)
+
+        # Optionally: filter out the NaN rows
+        group = group[group['position'].notna()]
+        
+        segments.append(group)
+    
+    return pd.concat(segments, ignore_index=True)
+
+def get_significant_gaps(is_valid, min_gap_size):
+    """
+    Identify where significant gaps (>= min_gap_size consecutive NaNs) occur.
+    Returns a Series of segment IDs.
+    """
+    # Label each run of consecutive valid/invalid values
+    runs = is_valid.ne(is_valid.shift()).cumsum()
+    
+    # Get the length of each run
+    run_lengths = is_valid.groupby(runs).transform('size')
+    
+    # A "significant gap" is an invalid run that's long enough
+    is_big_gap = (~is_valid) & (run_lengths >= min_gap_size)
+    
+    # Segment ID increments each time we EXIT a significant gap
+    # (i.e., when we go from big_gap=True to big_gap=False)
+    segment_id = (is_big_gap.shift(fill_value=False) & ~is_big_gap).cumsum()
+    
+    return segment_id
+
+
+# Apply it
+df_birds_position = birds_position_BCS_in_m.to_dataframe().reset_index()
+df_with_segments = add_segment_ids(df_birds_position, min_gap_size=1)
+print(df_with_segments)
+
+# %%%%%%
+# Convert to xarray dataarray
+
+# overwrite colum
+df_with_segments['new_individuals'] = (
+    df_with_segments['individuals'].str[:-1] + df_with_segments['segment'].astype(str)
 )
 
-plt.figure()
-plot_centroid_trajectory(birds_position_BCS_in_m.sel(individuals="bird1"))
 
 
 # %%
-plt.figure()
-plot_centroid_trajectory(birds_position_BCS_in_m_filt.sel(individuals="bird1"))
+# convert to xarray
+da_split = (
+    df_with_segments.loc[:,['time', 'space', 'keypoints', 'new_individuals', 'position']]
+    .set_index(['time', 'space', 'keypoints', 'new_individuals'])['position']
+    .to_xarray()
+)
 
 # %%
