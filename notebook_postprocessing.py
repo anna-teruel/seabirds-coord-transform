@@ -9,7 +9,6 @@ Then run this notebook in that conda environment.
 
 # %%
 
-import glob
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -30,11 +29,12 @@ xr.set_options(display_expand_attrs=False)
 
 # %%%%%%%%%%%%%%%%%%
 # Input data
-notebook_path = Path(glob.glob("notebook_seabirds.ipynb")[0]).resolve()
+notebook_path = Path(__file__).resolve()
 input_dir = notebook_path.parent / "output"
 
 boat_netcdf = "boat_position_BCS_in_m.nc"
 birds_netcdf = "birds_position_BCS_in_m.nc"
+
 
 
 # Postprocessing parameters
@@ -275,13 +275,24 @@ birds_position_BCS_m_split_post = birds_position_BCS_m_split_post.sel(
     individuals=has_valid_data
 )
 
-# %%%%%%%%%%%%%%%%%%%%%
-# Save postprocessed trajectories
-
+# %%%%%%%%%%%%%%%%
+# Save postprocessed data array
 birds_position_BCS_m_split_post.to_netcdf(
     input_dir / "birds_position_BCS_m_postprocessed.nc"
 )
 
+
+# %%%%%%%%%%%%%%%%%%%%%
+# Save postprocessed trajectories as a dataset to load in napari
+ds_export = xr.Dataset({
+    "position": birds_position_BCS_m_split_post,
+    "confidence": xr.full_like(
+        birds_position_BCS_m_split_post.isel(space=0, drop=True), 
+        np.nan
+    )
+})
+ds_export.attrs["ds_type"] = "poses"  # add dataset-level attributes
+ds_export.to_netcdf(input_dir / "birds_BCS_m_postprocessed.nc")
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Plot data

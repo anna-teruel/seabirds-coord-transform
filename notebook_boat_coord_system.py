@@ -33,7 +33,7 @@ xr.set_options(display_expand_attrs=False)
 
 # %%%%%%%%%%%%%%%%%%%%%%%
 # Input data paths
-notebook_path = Path(glob.glob("notebook_seabirds.ipynb")[0]).resolve()
+notebook_path = Path(__file__).resolve()
 data_dir = notebook_path.parent / "data"
 filepath = (
     data_dir
@@ -350,4 +350,3 @@ ax.legend(loc="upper left")
 # Save movement datasets
 birds_position_BCS_in_m.to_netcdf(output_dir / "birds_position_BCS_in_m.nc")
 boat_position_BCS_in_m.to_netcdf(output_dir / "boat_position_BCS_in_m.nc")
-
