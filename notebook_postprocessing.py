@@ -264,6 +264,17 @@ birds_position_BCS_m_split_post = birds_position_BCS_m_split.where(
     distance_to_smoothed <= max_distance_to_smoothed
 )
 
+
+# %%%%%%%%%%%%%%%%%%%%%%%
+# Drop IDs with all nans
+# Check which individuals have at least one non-NaN value
+has_valid_data = birds_position_BCS_m_split_post.notnull().any(dim=["time", "space", "keypoints"])
+
+# Keep only individuals with valid data
+birds_position_BCS_m_split_post = birds_position_BCS_m_split_post.sel(
+    individuals=has_valid_data
+)
+
 # %%%%%%%%%%%%%%%%%%%%%
 # Save postprocessed trajectories
 
