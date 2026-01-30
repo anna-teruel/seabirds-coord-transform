@@ -20,6 +20,8 @@ import xarray as xr
 
 from movement.plots import plot_centroid_trajectory
 from movement.kinematics import compute_forward_displacement
+from movement.utils.vector import compute_norm
+from movement.filtering import interpolate_over_time, savgol_filter
 
 # Hide attributes globally
 xr.set_options(display_expand_attrs=False)
@@ -144,6 +146,8 @@ birds_position_BCS_m_split = (
     .to_xarray()
 )
 
+
+
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Filter out short trajectories
 
@@ -160,14 +164,36 @@ birds_position_BCS_m_split = birds_position_BCS_m_split.sel(
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Remove datapoints with a big jump
+# (until when?)
 
-# compute_forward_displacement(birds_position_BCS_m_split)
+# # compute_forward_displacement(birds_position_BCS_m_split)
+# displacement_vector = birds_position_BCS_m_split.diff(dim="time", label="lower")
+# displacement_vector = displacement_vector.reindex_like(birds_position_BCS_m_split, fill_value=0)
 
+# displacement = compute_norm(displacement_vector)
+
+# # filter
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Compute a smoothed reference trajectory to filter out jumps 
+window_size = 30  # fps=30
+smoothed_position = savgol_filter(birds_position_BCS_m_split, window_size, polyorder=1)
+smoothed_position_interp = interpolate_over_time(smoothed_position, method='akima')
+
+# if distance between birds_position_BCS_m_split and  smoothed trajectory 
+# is above threshold, set datapoints to nan
+max_distance_to_smoothed = 3 # in m
+
+distance_to_smoothed = compute_norm(birds_position_BCS_m_split - smoothed_position_interp)
+
+birds_position_BCS_m_split = birds_position_BCS_m_split.where(
+    distance_to_smoothed <= max_distance_to_smoothed
+)
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Plot data
 # Select a time slice for clarity (frames 0 to 654)
-time_slice = slice(0, 3000)
+time_slice = slice(0, 9000)
 
 fig, ax = plt.subplots(1, 1)
 
@@ -210,7 +236,16 @@ ax.set_aspect("equal")
 # Plot an individual bird over time
 plt.figure()
 plot_centroid_trajectory(
-    birds_position_BCS_m_split.sel(time=time_slice), individual="bird022"
+    birds_position_BCS_m_split.sel(time=time_slice), individual="bird091"
+)
+plt.xlabel('x (m)')
+plt.ylabel('y (m)')
+
+# %%
+# Plot smoothed reference trajectory
+plt.figure()
+plot_centroid_trajectory(
+    smoothed_position_interp.sel(time=time_slice), individual="bird091"
 )
 plt.xlabel('x (m)')
 plt.ylabel('y (m)')
