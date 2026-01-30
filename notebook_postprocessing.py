@@ -275,8 +275,8 @@ birds_position_BCS_m_split_post.to_netcdf(
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Plot data
-# Select a time slice for clarity (frames 0 to 654)
-time_slice = slice(0, 3000)
+# Select a time slice for clarity 
+time_slice = slice(0, 9000)
 
 fig, ax = plt.subplots(1, 1)
 
