@@ -17,12 +17,13 @@ from scipy.spatial.transform import Rotation as R
 
 # Hide attributes globally
 xr.set_options(display_expand_attrs=False)
-# %%
+
+# %%%%%%%%%%%%%%%%%%%%%%%
 # For interactive plots: install ipympl with `pip install ipympl` and uncomment
 # the following line in your notebook
 # %matplotlib widget
 
-# %%
+# %%%%%%%%%%%%%%%%%%%%%%%
 # Input data paths
 notebook_path = Path(glob.glob("notebook_seabirds.ipynb")[0]).resolve()
 data_dir = notebook_path.parent / "data"
@@ -40,7 +41,6 @@ boat_max_width_in_m = 2.95  # m
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Helper functions
-
 
 def get_data_for_load_from_numpy(df):
     """Get array from dataframe to use "from numpy" function"""
