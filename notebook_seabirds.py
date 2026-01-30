@@ -1,19 +1,26 @@
 # %%
 
-import matplotlib
-import pandas as pd
-from movement.io import load_poses, save_poses
-from movement.utils.reports import report_nan_values
-from movement.kinematics import compute_pairwise_distances
-from movement.utils.vector import compute_norm
-from movement.transforms import scale
-from pathlib import Path
-import xarray as xr
-import numpy as np
-from scipy.spatial.transform import Rotation as R
-import matplotlib.pyplot as plt
 import glob
+from pathlib import Path
 
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import xarray as xr
+
+from movement.filtering import filter_by_confidence, interpolate_over_time
+from movement.io import load_poses, save_poses
+from movement.kinematics import compute_pairwise_distances
+from movement.plots import plot_centroid_trajectory
+from movement.transforms import scale
+from movement.utils.reports import report_nan_values
+from movement.utils.vector import compute_norm
+
+from scipy.spatial.transform import Rotation as R
+
+# Hide attributes globally
+xr.set_options(display_expand_attrs=False)
 # %%
 # For interactive plots: install ipympl with `pip install ipympl` and uncomment
 # the following line in your notebook
@@ -33,6 +40,7 @@ boat_max_width_in_m = 2.95  # m
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Helper functions
+
 
 def get_data_for_load_from_numpy(df):
     """Get array from dataframe to use "from numpy" function"""
@@ -149,6 +157,28 @@ else:
         ds_boat, filepath.parent / (filepath.stem + "_boat.h5"), split_individuals=False
     )
 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Filter low-confidence values
+confidence_threshold = 0.5
+
+boat_position = filter_by_confidence(
+    ds_boat.position, ds_boat.confidence, threshold=confidence_threshold
+)
+birds_position = filter_by_confidence(
+    ds_birds.position, ds_birds.confidence, threshold=confidence_threshold
+)
+
+# %%%%%%%%%%%%%%%%%%%%%
+# Linearly interpolate boat points
+# check how many nans
+report_nan_values(boat_position)
+
+
+boat_position_interp = interpolate_over_time(
+    boat_position, method="linear", print_report=True
+)  # there should be no nans after interp
+
+
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Compute rotation to BCS (boat coordinate system)
 # - origin : centroid of all boat keypoints per frame
@@ -161,12 +191,9 @@ else:
 # We cannot rotate the ICS into the "classic plot", it needs a flip of
 # the x-axis.
 
-# check nans
-report_nan_values(ds_boat.position)
 
 # compute origin
-boat_position = ds_boat.position
-boat_position_3d = add_z_coord_to_position_array(ds_boat.position)
+boat_position_3d = add_z_coord_to_position_array(boat_position_interp)
 boat_centroid_3d = boat_position_3d.mean("keypoints")
 
 # compute y-axis
@@ -187,7 +214,7 @@ rotation2boat = xr.apply_ufunc(
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Compute bird keypoints in BCS (translated and rotated)
-birds_position_3d = add_z_coord_to_position_array(ds_birds.position)
+birds_position_3d = add_z_coord_to_position_array(birds_position)
 
 birds_position_3d_BCS = xr.apply_ufunc(
     lambda rot, trans, vec: rot.apply(vec - trans),
@@ -233,7 +260,6 @@ boat_length = compute_norm(
 ).squeeze()
 
 
-
 # check with plot
 plt.figure()
 boat_width.plot(label="width")
@@ -246,7 +272,9 @@ plt.legend()
 # Express spatial coordinates in meters
 
 # We use boat length to scale the data
-scale_factor = (boat_max_length_in_m / boat_length)  # (boat_max_width_in_m / boat_width) - looks nosier
+scale_factor = (
+    boat_max_length_in_m / boat_length
+)  # (boat_max_width_in_m / boat_width) - looks nosier
 boat_position_BCS_in_m = boat_position_BCS * scale_factor
 birds_position_BCS_in_m = birds_position_BCS * scale_factor
 
@@ -311,4 +339,21 @@ cbar.set_label("frames")
 ax.legend(loc="upper left")
 # %%
 %matplotlib widget
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Split IDs
+from movement.filtering import filter_by_confidence
+from movement.plots import plot_centroid_trajectory
+
+birds_position_BCS_in_m_filt = filter_by_confidence(
+    birds_position_BCS_in_m, ds_birds.confidence, threshold=0.5
+)
+
+plt.figure()
+plot_centroid_trajectory(birds_position_BCS_in_m.sel(individuals="bird1"))
+
+
+# %%
+plt.figure()
+plot_centroid_trajectory(birds_position_BCS_in_m_filt.sel(individuals="bird1"))
+
 # %%
