@@ -1,7 +1,12 @@
 # %%
 
+import matplotlib
 import pandas as pd
 from movement.io import load_poses, save_poses
+from movement.utils.reports import report_nan_values
+from movement.kinematics import compute_pairwise_distances
+from movement.utils.vector import compute_norm
+from movement.transforms import scale
 from pathlib import Path
 import xarray as xr
 import numpy as np
@@ -22,6 +27,9 @@ filepath = (
     data_dir / "FILE00009_sDLC_DekrW32_seabirdNov6shuffle1_snapshot_170_el_filtered.h5"
 )
 
+# Vessel size: 8.55 x 2.95 m
+boat_max_length_in_m = 8.55  # m
+boat_max_width_in_m = 2.95  # m
 
 # %%
 # Helper functions
@@ -125,7 +133,6 @@ else:
     columns_to_drop = [col for col in df.columns if "bird" in col[1]]
     df_boat = df.drop(columns=columns_to_drop)
 
-
     position_array, confidence_array, list_individuals, list_keypoints = (
         get_data_for_load_from_numpy(df_boat)
     )
@@ -155,19 +162,18 @@ else:
 # We cannot rotate the ICS into the "classic plot", it needs a flip of
 # the x-axis.
 
+# check nans
+report_nan_values(ds_boat.position)
+
 # compute origin
 boat_position = ds_boat.position
 boat_position_3d = add_z_coord_to_position_array(ds_boat.position)
-
 boat_centroid_3d = boat_position_3d.mean("keypoints")
-
 
 # compute y-axis
 boat_y_axis_3d = (
     boat_position_3d.sel(keypoints="boatTip") - boat_centroid_3d
 ).drop_vars(["keypoints"])
-
-
 boat_centroid_3d = boat_centroid_3d.drop_vars("individuals").squeeze()
 boat_y_axis_3d = boat_y_axis_3d.drop_vars("individuals").squeeze()
 
@@ -179,7 +185,6 @@ rotation2boat = xr.apply_ufunc(
     vectorize=True,
 )
 
-# rotation2boat = rotation2boat.drop_vars("individuals").squeeze()
 
 # %%
 # Compute bird keypoints in BCS (translated and rotated)
@@ -212,26 +217,59 @@ boat_position_3d_BCS = xr.apply_ufunc(
 
 # drop z coordinate
 boat_position_BCS = boat_position_3d_BCS.drop_sel(space="z")
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Apply scaling
+
+# Compute boat width and length per frame in pixels
+boat_width = compute_pairwise_distances(
+    boat_position_BCS, dim="keypoints", pairs={"boatBL": "boatBR"}
+)
+# boat_width.name = "position"
+
+boat_midpoint_BL_BR = boat_position_BCS.sel(keypoints=["boatBL", "boatBR"]).mean(
+    dim="keypoints"
+)
+boat_length = compute_norm(
+    boat_position_BCS.sel(keypoints="boatTip") - boat_midpoint_BL_BR
+).squeeze()
+
+
+
+# check with plot
+plt.figure()
+boat_width.plot(label="width")
+boat_length.plot(label="length")
+plt.xlabel("time (frames)")
+plt.ylabel("distance (pixels)")
+plt.legend()
 
 # %%
+# We use boat length to scale the data
+
+scale_factor = (boat_max_length_in_m / boat_length)  # (boat_max_width_in_m / boat_width) - looks nosier
+boat_position_BCS_in_m = boat_position_BCS * scale_factor
+birds_position_BCS_in_m = birds_position_BCS * scale_factor
+
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Plot data in BCS
 
 # Select a time slice for clarity (frames 0 to 654)
-time_slice = slice(0, 1999)
+time_slice = slice(0, 1400)
 
 fig, ax = plt.subplots(1, 1)
 
 # plot bird data and color by individual
 cmap = plt.get_cmap("tab10")
-color_array = cmap(np.arange(len(birds_position_BCS.individuals)))
+color_array = cmap(np.arange(len(birds_position_BCS_in_m.individuals)))
 
-for i, ind in enumerate(birds_position_BCS.individuals):
+for i, ind in enumerate(birds_position_BCS_in_m.individuals):
     # bird centroids
     ax.scatter(
-        birds_position_BCS.sel(time=time_slice, individuals=ind, space="x").mean(
+        birds_position_BCS_in_m.sel(time=time_slice, individuals=ind, space="x").mean(
             "keypoints"
         ),
-        birds_position_BCS.sel(time=time_slice, individuals=ind, space="y").mean(
+        birds_position_BCS_in_m.sel(time=time_slice, individuals=ind, space="y").mean(
             "keypoints"
         ),
         5,
@@ -243,8 +281,8 @@ ax.legend(loc="upper right", bbox_to_anchor=(1.02, 1))
 
 # plot boat centroid
 sc = ax.scatter(
-    boat_position_BCS.sel(time=time_slice, space="x").mean("keypoints"),
-    boat_position_BCS.sel(time=time_slice, space="y").mean("keypoints"),
+    boat_position_BCS_in_m.sel(time=time_slice, space="x").mean("keypoints"),
+    boat_position_BCS_in_m.sel(time=time_slice, space="y").mean("keypoints"),
     10,
     c=np.arange((time_slice.stop - time_slice.start) + 1),
     cmap="plasma",
@@ -254,15 +292,15 @@ sc = ax.scatter(
 # plot boat keypoints in time
 for boat_keypoint in ["boatTip", "boatBL", "boatBR"]:
     ax.scatter(
-        boat_position_BCS.sel(time=time_slice, keypoints=boat_keypoint, space="x"),
-        boat_position_BCS.sel(time=time_slice, keypoints=boat_keypoint, space="y"),
+        boat_position_BCS_in_m.sel(time=time_slice, keypoints=boat_keypoint, space="x"),
+        boat_position_BCS_in_m.sel(time=time_slice, keypoints=boat_keypoint, space="y"),
         10,
         c=np.arange((time_slice.stop - time_slice.start) + 1),
         cmap="plasma",
     )
 
-ax.set_xlabel("x_BCS (pixels)")
-ax.set_ylabel("y_BCS (pixels)")
+ax.set_xlabel("x_BCS (m)")
+ax.set_ylabel("y_BCS (m)")
 ax.set_aspect("equal")
 
 # add colorbar
@@ -271,4 +309,6 @@ cbar.set_label("frames")
 
 # put legend top left
 ax.legend(loc="upper left")
+# %%
+%matplotlib widget
 # %%
