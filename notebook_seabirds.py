@@ -31,9 +31,8 @@ filepath = (
 boat_max_length_in_m = 8.55  # m
 boat_max_width_in_m = 2.95  # m
 
-# %%
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Helper functions
-
 
 def get_data_for_load_from_numpy(df):
     """Get array from dataframe to use "from numpy" function"""
@@ -95,12 +94,12 @@ def add_z_coord_to_position_array(position_array):
     )
 
 
-# %%
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Read input data as pandas dataframe
 df = pd.read_hdf(filepath)
 
 
-# %%
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Get dataset with bird data only
 if (filepath.parent / (filepath.stem + "_birds.h5")).exists():
     ds_birds = load_poses.from_dlc_file(filepath.parent / (filepath.stem + "_birds.h5"))
@@ -125,7 +124,7 @@ else:
     # https://movement.neuroinformatics.dev/user_guide/gui.html
     save_poses.to_dlc_file(ds_birds, filepath.parent / (filepath.stem + "_birds.h5"))
 
-# %%
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Get dataset with boat data only
 if (filepath.parent / (filepath.stem + "_boat.h5")).exists():
     ds_boat = load_poses.from_dlc_file(filepath.parent / (filepath.stem + "_boat.h5"))
@@ -150,8 +149,8 @@ else:
         ds_boat, filepath.parent / (filepath.stem + "_boat.h5"), split_individuals=False
     )
 
-# %%
-# Express coordinates in BCS (boat coordinate system)
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Compute rotation to BCS (boat coordinate system)
 # - origin : centroid of all boat keypoints per frame
 # - y-axis: vector from boat centroid to tip keypoint
 # - x-axis: perpendicular to y-axis, points to left side of the boat
@@ -186,7 +185,7 @@ rotation2boat = xr.apply_ufunc(
 )
 
 
-# %%
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Compute bird keypoints in BCS (translated and rotated)
 birds_position_3d = add_z_coord_to_position_array(ds_birds.position)
 
@@ -203,7 +202,7 @@ birds_position_3d_BCS = xr.apply_ufunc(
 # drop z coordinate
 birds_position_BCS = birds_position_3d_BCS.drop_sel(space="z")
 
-# %%
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Apply same transform to boat points
 boat_position_3d_BCS = xr.apply_ufunc(
     lambda rot, trans, vec: rot.apply(vec - trans),
@@ -243,9 +242,10 @@ plt.xlabel("time (frames)")
 plt.ylabel("distance (pixels)")
 plt.legend()
 
-# %%
-# We use boat length to scale the data
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Express spatial coordinates in meters
 
+# We use boat length to scale the data
 scale_factor = (boat_max_length_in_m / boat_length)  # (boat_max_width_in_m / boat_width) - looks nosier
 boat_position_BCS_in_m = boat_position_BCS * scale_factor
 birds_position_BCS_in_m = birds_position_BCS * scale_factor
