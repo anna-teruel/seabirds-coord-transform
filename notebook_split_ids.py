@@ -25,11 +25,13 @@ input_dir = notebook_path.parent / "output"
 boat_netcdf = "boat_position_BCS_in_m.nc"
 birds_netcdf = "birds_position_BCS_in_m.nc"
 
-min_gap_size = 15 # in frames, video at 30fps
+fps = 30  # frames per second (video)
+min_gap_size = 20  # in frames
 
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Helper functions
+
 
 def add_segment_ids(df, min_gap_size=1):
     """
@@ -83,7 +85,7 @@ def get_significant_gaps(is_valid, min_gap_size):
     """
     # Identify consecutive runs of the same value
     # .ne() --> True where a transition occurs
-    # .cumsum() ---> runnning ID (Since True = 1 and False = 0, 
+    # .cumsum() ---> runnning ID (Since True = 1 and False = 0,
     # this increments by 1 each time there's a transition.)
     runs = is_valid.ne(is_valid.shift()).cumsum()
 
@@ -101,6 +103,7 @@ def get_significant_gaps(is_valid, min_gap_size):
     segment_id = (is_big_gap.shift(fill_value=False) & ~is_big_gap).cumsum()
 
     return segment_id
+
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Load movement dataset
@@ -124,16 +127,30 @@ df_with_segments["new_individuals"] = df_with_segments["individuals"].str[
 df_with_segments = df_with_segments.drop(columns=["individuals"])
 df_with_segments = df_with_segments.rename(columns={"new_individuals": "individuals"})
 
-# convert to xarray
-birds_BCS_m_split = (
+# convert to xarray data array
+birds_position_BCS_m_split = (
     df_with_segments.loc[:, ["time", "space", "keypoints", "individuals", "position"]]
-    .set_index(["time", "space", "keypoints", "individuals"]) #["position"]
+    .set_index(["time", "space", "keypoints", "individuals"])["position"]
     .to_xarray()
 )
 
-birds_position_BCS_m_split = birds_BCS_m_split.position
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Filter out short trajectories
+
+# Compute number of frames with at least one keypoint per id
+min_n_frames_with_data = fps * 15  # per ID,
+for individual, group in birds_position_BCS_m_split.groupby("individuals"):
+    # n_frames = group.time.nunique()
+    # Number of frames with any space coordinate on any kpt not nan
+    n_frames = (~group.isnull()).all(dim="space").any("keypoints").sum()
+    if n_frames < min_n_frames_with_data:
+        birds_position_BCS_m_split = birds_position_BCS_m_split.drop_sel(
+            individuals=individual
+        )
+
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Plot data
 # Select a time slice for clarity (frames 0 to 654)
 time_slice = slice(0, 1500)
 
@@ -160,15 +177,16 @@ for i, ind in enumerate(birds_position_BCS_m_split.individuals):
 
     # # add text label with ID at the end of the trajectory
     # ax.text(
-    #     birds_position_BCS_m_split.sel(time=time_slice.stop, individuals=ind, space="x").mean(
+    #     birds_position_BCS_m_split.sel(time=0.5*(time_slice.start+time_slice.stop), individuals=ind, space="x").mean(
     #         "keypoints"
     #     ),
-    #     birds_position_BCS_m_split.sel(time=time_slice.stop, individuals=ind, space="y").mean(
+    #     birds_position_BCS_m_split.sel(time=0.5*(time_slice.start+time_slice.stop), individuals=ind, space="y").mean(
     #         "keypoints"
     #     ),
     #     i,
     # )
 
+# Can I have legend only for non-nan?
 # ax.legend(loc="upper right", bbox_to_anchor=(1.02, 1))
 
 
@@ -185,5 +203,10 @@ ax.set_aspect("equal")
 
 # %%
 
-plot_centroid_trajectory(birds_position_BCS_m_split.sel(time=time_slice), individual="bird001")
+plot_centroid_trajectory(
+    birds_position_BCS_m_split.sel(time=time_slice), individual="bird000"
+)
+# %%
+%matplotlib widget
+
 # %%
