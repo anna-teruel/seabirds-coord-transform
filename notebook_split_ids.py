@@ -14,8 +14,8 @@ from movement.plots import plot_centroid_trajectory
 # Hide attributes globally
 xr.set_options(display_expand_attrs=False)
 
-# %%
-%matplotlib widget
+# %%%%%%%%%%%%%%%%%%%%%%%
+# %matplotlib widget
 
 # %%%%%%%%%%%%%%%%%%
 # Input data
@@ -25,7 +25,7 @@ input_dir = notebook_path.parent / "output"
 boat_netcdf = "boat_position_BCS_in_m.nc"
 birds_netcdf = "birds_position_BCS_in_m.nc"
 
-min_gap_size = 1
+min_gap_size = 15 # in frames, video at 30fps
 
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -69,7 +69,7 @@ def add_segment_ids(df, min_gap_size=1):
         group["segment"] = group["time"].map(segment_id)
 
         # Optionally: filter out the NaN rows
-        group = group[group["position"].notna()]
+        # group = group[group["position"].notna()]
 
         segments.append(group)
 
@@ -83,7 +83,8 @@ def get_significant_gaps(is_valid, min_gap_size):
     """
     # Identify consecutive runs of the same value
     # .ne() --> True where a transition occurs
-    # .cumsum() ---> runnning ID (Since True = 1 and False = 0, this increments by 1 each time there's a transition.)
+    # .cumsum() ---> runnning ID (Since True = 1 and False = 0, 
+    # this increments by 1 each time there's a transition.)
     runs = is_valid.ne(is_valid.shift()).cumsum()
 
     # Get the length of each run
@@ -134,7 +135,7 @@ birds_position_BCS_m_split = birds_BCS_m_split.position
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Select a time slice for clarity (frames 0 to 654)
-time_slice = slice(0, 1400)
+time_slice = slice(0, 1500)
 
 fig, ax = plt.subplots(1, 1)
 
@@ -184,5 +185,5 @@ ax.set_aspect("equal")
 
 # %%
 
-plot_centroid_trajectory(birds_position_BCS_m_split, individual="bird10")
+plot_centroid_trajectory(birds_position_BCS_m_split.sel(time=time_slice), individual="bird001")
 # %%
