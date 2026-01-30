@@ -1,3 +1,11 @@
+"""A notebook to express DLC trajectories from birds in a boat coordinate system.
+
+Requirements: following installation instructions for `movement`
+https://movement.neuroinformatics.dev/latest/user_guide/installation.html
+
+Then run this notebook in that conda environment.
+
+"""
 # %%
 
 import glob
