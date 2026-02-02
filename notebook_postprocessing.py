@@ -276,14 +276,35 @@ birds_position_BCS_m_split_post = birds_position_BCS_m_split_post.sel(
 )
 
 # %%%%%%%%%%%%%%%%
-# Save postprocessed data array
+# Save postprocessed *data array* as netcdf
 birds_position_BCS_m_split_post.to_netcdf(
     input_dir / "birds_position_BCS_m_postprocessed.nc"
 )
 
 
+# %%%%%%%%%%%%%%%
+# Export as a tidy dataframe with x,y separate columns
+
+df_birds_post = birds_position_BCS_m_split_post.to_dataframe().reset_index()
+
+# Optional: drop rows with NaN positions if you only want valid data
+df_birds_post = df_birds_post.dropna(subset=["position"])
+
+# Pivot to get x and y as separate columns
+df_wide = df_birds_post.pivot(
+    index=["time", "keypoints", "individuals"],
+    columns="space",
+    values="position"
+).reset_index()
+
+# Flatten column names
+df_wide.columns.name = None
+
+# Export to CSV
+df_wide.to_csv(input_dir / "birds_position_BCS_m_postprocessed.csv", index=False)
+
 # %%%%%%%%%%%%%%%%%%%%%
-# Save postprocessed trajectories as a dataset to load in napari
+# Save postprocessed trajectories as a **dataset** to load in napari
 ds_export = xr.Dataset({
     "position": birds_position_BCS_m_split_post,
     "confidence": xr.full_like(
