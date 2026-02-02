@@ -291,7 +291,7 @@ birds_position_BCS_in_m = birds_position_BCS * scale_factor
 # Plot data in BCS
 
 # Select a time slice for clarity (frames 0 to 654)
-time_slice = slice(0, 1400)
+time_slice = slice(0, 9000)
 
 fig, ax = plt.subplots(1, 1)
 
@@ -320,7 +320,7 @@ sc = ax.scatter(
     boat_position_BCS_in_m.sel(time=time_slice, space="x").mean("keypoints"),
     boat_position_BCS_in_m.sel(time=time_slice, space="y").mean("keypoints"),
     10,
-    c=np.arange((time_slice.stop - time_slice.start) + 1),
+    c=np.arange((time_slice.stop - time_slice.start)),
     cmap="plasma",
     marker="*",
 )
@@ -331,13 +331,14 @@ for boat_keypoint in ["boatTip", "boatBL", "boatBR"]:
         boat_position_BCS_in_m.sel(time=time_slice, keypoints=boat_keypoint, space="x"),
         boat_position_BCS_in_m.sel(time=time_slice, keypoints=boat_keypoint, space="y"),
         10,
-        c=np.arange((time_slice.stop - time_slice.start) + 1),
+        c=np.arange((time_slice.stop - time_slice.start)),
         cmap="plasma",
     )
 
 ax.set_xlabel("x_BCS (m)")
 ax.set_ylabel("y_BCS (m)")
 ax.set_aspect("equal")
+ax.invert_xaxis()
 
 # add colorbar
 cbar = fig.colorbar(sc, ax=ax)

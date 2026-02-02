@@ -36,7 +36,6 @@ boat_netcdf = "boat_position_BCS_in_m.nc"
 birds_netcdf = "birds_position_BCS_in_m.nc"
 
 
-
 # Postprocessing parameters
 fps = 30  # frames per second (video)
 min_gap_size = 15  # in frames, for splitting IDs
@@ -268,7 +267,9 @@ birds_position_BCS_m_split_post = birds_position_BCS_m_split.where(
 # %%%%%%%%%%%%%%%%%%%%%%%
 # Drop IDs with all nans
 # Check which individuals have at least one non-NaN value
-has_valid_data = birds_position_BCS_m_split_post.notnull().any(dim=["time", "space", "keypoints"])
+has_valid_data = birds_position_BCS_m_split_post.notnull().any(
+    dim=["time", "space", "keypoints"]
+)
 
 # Keep only individuals with valid data
 birds_position_BCS_m_split_post = birds_position_BCS_m_split_post.sel(
@@ -292,9 +293,7 @@ df_birds_post = df_birds_post.dropna(subset=["position"])
 
 # Pivot to get x and y as separate columns
 df_wide = df_birds_post.pivot(
-    index=["time", "keypoints", "individuals"],
-    columns="space",
-    values="position"
+    index=["time", "keypoints", "individuals"], columns="space", values="position"
 ).reset_index()
 
 # Flatten column names
@@ -305,19 +304,20 @@ df_wide.to_csv(input_dir / "birds_position_BCS_m_postprocessed.csv", index=False
 
 # %%%%%%%%%%%%%%%%%%%%%
 # Save postprocessed trajectories as a **dataset** to load in napari
-ds_export = xr.Dataset({
-    "position": birds_position_BCS_m_split_post,
-    "confidence": xr.full_like(
-        birds_position_BCS_m_split_post.isel(space=0, drop=True), 
-        np.nan
-    )
-})
+ds_export = xr.Dataset(
+    {
+        "position": birds_position_BCS_m_split_post,
+        "confidence": xr.full_like(
+            birds_position_BCS_m_split_post.isel(space=0, drop=True), np.nan
+        ),
+    }
+)
 ds_export.attrs["ds_type"] = "poses"  # add dataset-level attributes
 ds_export.to_netcdf(input_dir / "birds_BCS_m_postprocessed.nc")
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Plot data
-# Select a time slice for clarity 
+# Select a time slice for clarity
 time_slice = slice(0, 9000)
 
 fig, ax = plt.subplots(1, 1)
@@ -348,11 +348,22 @@ for i, ind in enumerate(birds_position_BCS_m_split_post.individuals):
         label=ind.item() if has_data else None,  # Only label if has data
     )
 
+
+# plot boat keypoints in time
+for boat_keypoint in ["boatTip", "boatBL", "boatBR"]:
+    ax.scatter(
+        boat_position_BCS_in_m.sel(time=time_slice, keypoints=boat_keypoint, space="x"),
+        boat_position_BCS_in_m.sel(time=time_slice, keypoints=boat_keypoint, space="y"),
+        10,
+        c=np.arange((time_slice.stop - time_slice.start)),
+        cmap="plasma",
+    )
+
 ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1), markerscale=2)
 ax.set_xlabel("x_BCS (m)")
 ax.set_ylabel("y_BCS (m)")
 ax.set_aspect("equal")
-
+ax.invert_xaxis()  # x is positive on the left side of the boat
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%
 # Plot an individual bird over time before filtering out jumps and
