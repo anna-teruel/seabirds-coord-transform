@@ -20,7 +20,7 @@ import xarray as xr
 from movement.plots import plot_centroid_trajectory
 from movement.utils.vector import compute_norm
 from movement.filtering import interpolate_over_time, savgol_filter
-
+from movement.io import save_poses
 # Hide attributes globally
 xr.set_options(display_expand_attrs=False)
 
@@ -314,6 +314,11 @@ ds_export = xr.Dataset(
 )
 ds_export.attrs["ds_type"] = "poses"  # add dataset-level attributes
 ds_export.to_netcdf(input_dir / "birds_BCS_m_postprocessed.nc")
+
+
+# %%
+# Save as DLC .h5
+save_poses.to_dlc_file(ds_export, input_dir / "birds_BCS_m_postprocessed.h5")
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Plot data
