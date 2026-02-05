@@ -31,9 +31,6 @@ xr.set_options(display_expand_attrs=False)
 notebook_path = Path(__file__).resolve()
 input_dir = notebook_path.parent / "output"
 
-boat_netcdf = "boat_position_ICS.nc"
-birds_netcdf = "birds_position_ICS.nc"
-
 
 # Postprocessing parameters
 fps = 30  # frames per second (video)
@@ -124,9 +121,6 @@ def get_significant_gaps(is_valid, min_gap_size):
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Load movement dataset
-# birds_position_BCS_in_m = xr.load_dataarray(input_dir / birds_netcdf)
-# boat_position_BCS_in_m = xr.load_dataarray(input_dir / boat_netcdf)
-
 bird_ds = load_poses.from_dlc_file("/Users/sofia/swc/project_seabirds/data/second-iter/FILE00009_sDLC_DekrW32_seabirdNov6shuffle1_snapshot_170_el_filtered_birds.h5")
 boat_ds = load_poses.from_dlc_file("/Users/sofia/swc/project_seabirds/data/second-iter/FILE00009_sDLC_DekrW32_seabirdNov6shuffle1_snapshot_170_el_filtered_boat.h5")
 
