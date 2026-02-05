@@ -318,12 +318,15 @@ ds_export = xr.Dataset(
     }
 )
 ds_export.attrs["ds_type"] = "poses"  # add dataset-level attributes
-ds_export.to_netcdf(input_dir / "birds_ICS_m_postprocessed.nc")
+ds_export.to_netcdf(input_dir / "birds_ICS_postprocessed.nc")
 
 
 # %%
 # Save as DLC .h5
 save_poses.to_dlc_file(ds_export, input_dir / "birds_ICS_postprocessed.h5")
+
+save_poses.to_dlc_file(boat_ds, input_dir / "boat_ICS.h5")
+
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Plot data
@@ -408,6 +411,3 @@ plot_centroid_trajectory(
 ax.set_xlabel("x (m)")
 ax.set_ylabel("y (m)")
 ax.set_title("after removing data with 'jumps'")
-# %%
-%matplotlib widget
-# %%
