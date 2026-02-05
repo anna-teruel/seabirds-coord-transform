@@ -24,7 +24,7 @@ from movement.utils.vector import compute_norm
 xr.set_options(display_expand_attrs=False)
 
 # %%%%%%%%%%%%%%%%%%%%%%%
-%matplotlib widget
+# %matplotlib widget  # pip install ipympl for interactive pltos
 
 # %%%%%%%%%%%%%%%%%%
 # Input data
