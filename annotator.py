@@ -32,7 +32,7 @@ def load_video(viewer, path):
 
 @dataclass
 class Edit:
-    type: str                 # "swap" or "blank"
+    type: str
     t0_frame: int
     t1_frame: int
     t0: str
@@ -42,9 +42,6 @@ class Edit:
     ind: Optional[str] = None
 
 
-# ----------------------------
-# UI Widget
-# ----------------------------
 class AnnotatorWidget(QWidget):
     def __init__(self, viewer: napari.Viewer):
         super().__init__()
@@ -63,13 +60,15 @@ class AnnotatorWidget(QWidget):
         self.start_frame: Optional[int] = None
         self.end_frame: Optional[int] = None
 
-        # current-frame editing state
         self.current_frame_idx: Optional[int] = None
         self.current_point_layers: Dict[str, object] = {}
         self._is_refreshing_points = False
 
         self.trajectory_layer = None
         self.traj_tail_length = 1000
+
+        # add-point mode
+        self.add_point_mode = False
 
         # ---- UI ----
         layout = QVBoxLayout()
@@ -105,6 +104,18 @@ class AnnotatorWidget(QWidget):
         layout.addWidget(QLabel("Blank individual"))
         self.ind_box = QComboBox()
         layout.addWidget(self.ind_box)
+
+        layout.addWidget(QLabel("Add missing bodypart"))
+        add_row = QHBoxLayout()
+        self.add_ind_box = QComboBox()
+        self.add_bp_box = QComboBox()
+        add_row.addWidget(self.add_ind_box)
+        add_row.addWidget(self.add_bp_box)
+        layout.addLayout(add_row)
+
+        self.btn_add_point_mode = QPushButton("Add bodypart")
+        self.btn_add_point_mode.setCheckable(True)
+        layout.addWidget(self.btn_add_point_mode)
 
         mark_row = QHBoxLayout()
         self.btn_set_start = QPushButton("Set START")
@@ -145,13 +156,14 @@ class AnnotatorWidget(QWidget):
         self.btn_save_json.clicked.connect(self.save_json)
         self.btn_save_h5.clicked.connect(self.save_corrected_h5)
 
-        # frame-change listener
+        self.btn_add_point_mode.toggled.connect(self.toggle_add_point_mode)
+
         self.viewer.dims.events.current_step.connect(self.on_frame_changed)
 
         self.refresh_visibility()
 
     # ----------------------------
-    # basic UI callbacks
+    # UI callbacks
     # ----------------------------
     def on_fps_changed(self, v: int):
         self.fps = float(v)
@@ -166,6 +178,13 @@ class AnnotatorWidget(QWidget):
 
     def current_frame(self) -> int:
         return int(self.viewer.dims.point[0])
+
+    def toggle_add_point_mode(self, checked):
+        self.add_point_mode = checked
+        if checked:
+            self.status.setText("Add bodypart mode active: click on the video to place the point.")
+        else:
+            self.update_status()
 
     # ----------------------------
     # load video / h5
@@ -183,8 +202,16 @@ class AnnotatorWidget(QWidget):
         self.viewer.dims.set_point(0, 0)
         self.current_frame_idx = 0
         self.current_point_layers = {}
-        self.update_status()
 
+        # connect mouse callback to video layer
+        try:
+            video_layer = self.viewer.layers["video"]
+            video_layer.mouse_drag_callbacks.append(self.on_viewer_click)
+        except Exception:
+            pass
+
+        self.update_status()
+    
     def _remove_trajectory_layer(self):
         if self.trajectory_layer is not None:
             try:
@@ -221,10 +248,10 @@ class AnnotatorWidget(QWidget):
                     continue
 
                 arr = np.column_stack([
-                    np.full(valid.sum(), track_id),
-                    frames[valid],
-                    y[valid],
-                    x[valid],
+                    np.full(valid.sum(), track_id),  # track id
+                    frames[valid],                   # time
+                    y[valid],                        # y
+                    x[valid],                        # x
                 ])
                 tracks_all.append(arr)
                 track_id += 1
@@ -249,7 +276,6 @@ class AnnotatorWidget(QWidget):
             return
 
         self._is_refreshing_points = True
-
         self.h5_path = path
         self.dlc_df = pd.read_hdf(path)
 
@@ -269,6 +295,7 @@ class AnnotatorWidget(QWidget):
         self.individuals = [str(i) for i in self.dlc_df.columns.get_level_values("individuals").unique()]
         self.bodyparts = [str(bp) for bp in self.dlc_df.columns.get_level_values("bodyparts").unique()]
 
+        # annotation dropdowns
         self.a_box.clear()
         self.b_box.clear()
         self.ind_box.clear()
@@ -278,19 +305,18 @@ class AnnotatorWidget(QWidget):
         if len(self.individuals) > 1:
             self.b_box.setCurrentIndex(1)
 
-        self._remove_current_point_layers()
-        self._remove_trajectory_layer()
+        # add-point dropdowns
+        self.add_ind_box.clear()
+        self.add_bp_box.clear()
+        self.add_ind_box.addItems(self.individuals)
+        self.add_bp_box.addItems(self.bodyparts)
 
+        self._remove_current_point_layers()
         self.current_frame_idx = self.current_frame()
 
-        # draw trajectories first
-        self.draw_all_bodypart_trajectories(tail_length=self.traj_tail_length)
-
-        # then draw editable points
-        self.current_point_layers = {}
         self._is_refreshing_points = False
         self._draw_current_frame_points()
-
+        self.draw_all_bodypart_trajectories(tail_length=self.traj_tail_length)
         self.update_status()
 
     # ----------------------------
@@ -304,6 +330,10 @@ class AnnotatorWidget(QWidget):
             except Exception:
                 pass
         self.current_point_layers = {}
+
+    def _individual_colors(self):
+        cmap = plt.get_cmap("Set2")
+        return {ind: [cmap(i % cmap.N)] for i, ind in enumerate(self.individuals)}
 
     def _get_frame_points_for_individual(self, ind, frame_idx):
         pts = []
@@ -333,16 +363,12 @@ class AnnotatorWidget(QWidget):
             return None, None
 
         points_array = np.asarray(pts, dtype=float)
-        features = {
+        features = pd.DataFrame({
             "bodypart": labels,
             "frame": frames_meta,
             "individual": inds_meta,
-        }
+        })
         return points_array, features
-
-    def _individual_colors(self):
-        cmap = plt.get_cmap("Set2")
-        return {ind: [cmap(i % cmap.N)] for i, ind in enumerate(self.individuals)}
 
     def _draw_current_frame_points(self):
         if self.dlc_df is None or self.scorer is None:
@@ -352,7 +378,6 @@ class AnnotatorWidget(QWidget):
         frame_idx = self.current_frame()
         colors = self._individual_colors()
 
-        # first time: create layers once
         if not self.current_point_layers:
             for ind in self.individuals:
                 result = self._get_frame_points_for_individual(ind, frame_idx)
@@ -376,8 +401,6 @@ class AnnotatorWidget(QWidget):
                     "translation": np.array([0, -8, 8]),
                 }
                 self.current_point_layers[ind] = layer
-
-        # later: update existing layers only
         else:
             for ind in self.individuals:
                 result = self._get_frame_points_for_individual(ind, frame_idx)
@@ -416,6 +439,56 @@ class AnnotatorWidget(QWidget):
 
         self._is_refreshing_points = False
 
+    def on_point_added(self, event):
+        layer = event.source
+
+        if self.dlc_df is None or self.scorer is None:
+            return
+
+        if len(layer.data) == 0:
+            return
+
+        new_index = len(layer.data) - 1
+        bp = self.add_bp_box.currentText()
+
+        if not bp:
+            self.status.setText("Select a bodypart to add first.")
+            return
+
+        # make features a dataframe
+        features = pd.DataFrame(layer.features).copy()
+
+        # make sure required columns exist
+        for col in ["bodypart", "individual", "frame"]:
+            if col not in features.columns:
+                features[col] = np.nan
+
+        # if a new point was added, features may be shorter than data
+        if len(features) < len(layer.data):
+            n_missing = len(layer.data) - len(features)
+            extra = pd.DataFrame({
+                "bodypart": [np.nan] * n_missing,
+                "individual": [np.nan] * n_missing,
+                "frame": [np.nan] * n_missing,
+            })
+            features = pd.concat([features, extra], ignore_index=True)
+
+        features.loc[new_index, "bodypart"] = bp
+        features.loc[new_index, "individual"] = layer.name
+        features.loc[new_index, "frame"] = self.current_frame()
+
+        layer.features = features
+        layer.text = {
+            "string": "{bodypart}",
+            "size": 8,
+            "color": "white",
+            "translation": np.array([0, -8, 8]),
+        }
+
+        # commit immediately so it is stored in self.dlc_df
+        self._commit_current_frame_points()
+        self.status.setText(f"Added {bp} to layer {layer.name} at frame {self.current_frame()}.")
+    
     def _commit_current_frame_points(self):
         if self.dlc_df is None or self.scorer is None or self._is_refreshing_points:
             return
@@ -424,25 +497,46 @@ class AnnotatorWidget(QWidget):
         if frame_idx is None:
             return
 
+        # blank whole frame first
+        for ind in self.individuals:
+            for bp in self.bodyparts:
+                x_col = (self.scorer, ind, bp, "x")
+                y_col = (self.scorer, ind, bp, "y")
+                lk_col = (self.scorer, ind, bp, "likelihood")
+
+                if x_col in self.dlc_df.columns:
+                    self.dlc_df.at[frame_idx, x_col] = np.nan
+                if y_col in self.dlc_df.columns:
+                    self.dlc_df.at[frame_idx, y_col] = np.nan
+                if lk_col in self.dlc_df.columns:
+                    self.dlc_df.at[frame_idx, lk_col] = np.nan
+
+        # write back what is currently visible in each point layer
         for ind, layer in self.current_point_layers.items():
-            if layer.data is None or len(layer.data) == 0:
+            data = np.asarray(layer.data)
+            if data.size == 0:
                 continue
 
-            data = np.asarray(layer.data)
-            bodyparts = list(layer.features["bodypart"])
+            features = pd.DataFrame(layer.features)
+            if "bodypart" not in features.columns or len(features) != len(data):
+                print(f"Skipping commit for {ind}: data/features mismatch")
+                continue
 
-            for row, bp in zip(data, bodyparts):
-                _, y, x = row
+            for i in range(len(data)):
+                _, y, x = data[i]
+                bp = str(features.iloc[i]["bodypart"])
 
                 x_col = (self.scorer, ind, bp, "x")
                 y_col = (self.scorer, ind, bp, "y")
+                lk_col = (self.scorer, ind, bp, "likelihood")
 
                 if x_col in self.dlc_df.columns:
                     self.dlc_df.at[frame_idx, x_col] = float(x)
                 if y_col in self.dlc_df.columns:
                     self.dlc_df.at[frame_idx, y_col] = float(y)
+                if lk_col in self.dlc_df.columns:
+                    self.dlc_df.at[frame_idx, lk_col] = 1.0
 
-        # optional: keep likelihood unchanged
 
     def on_frame_changed(self, event=None):
         if self.dlc_df is None or self._is_refreshing_points:
@@ -457,6 +551,91 @@ class AnnotatorWidget(QWidget):
         self._draw_current_frame_points()
         self.update_status()
 
+    # ----------------------------
+    # add missing point
+    # ----------------------------
+    def on_viewer_click(self, layer, event):
+        if not self.add_point_mode:
+            return
+
+        if layer is None or layer.name != "video":
+            return
+
+        if self.dlc_df is None or self.scorer is None:
+            return
+
+        pos = event.position
+        if len(pos) < 3:
+            return
+
+        frame_idx = int(round(pos[0]))
+        y = float(pos[1])
+        x = float(pos[2])
+
+        ind = self.add_ind_box.currentText()
+        bp = self.add_bp_box.currentText()
+
+        if not ind or not bp:
+            self.status.setText("Select individual and bodypart first.")
+            return
+
+        x_col = (self.scorer, ind, bp, "x")
+        y_col = (self.scorer, ind, bp, "y")
+        lk_col = (self.scorer, ind, bp, "likelihood")
+
+        if x_col not in self.dlc_df.columns or y_col not in self.dlc_df.columns:
+            self.status.setText(f"Columns not found for {ind} / {bp}.")
+            return
+
+        # 1. write directly to dataframe
+        self.dlc_df.at[frame_idx, x_col] = x
+        self.dlc_df.at[frame_idx, y_col] = y
+        if lk_col in self.dlc_df.columns:
+            self.dlc_df.at[frame_idx, lk_col] = 1.0
+
+        # 2. update visible layer directly so commit sees it too
+        if ind in self.current_point_layers:
+            point_layer = self.current_point_layers[ind]
+            data = np.asarray(point_layer.data)
+            features = pd.DataFrame(point_layer.features).copy()
+
+            # if bodypart already exists in this frame, replace it
+            if "bodypart" in features.columns and bp in list(features["bodypart"]):
+                idx = list(features["bodypart"]).index(bp)
+                data[idx] = [frame_idx, y, x]
+            else:
+                new_row = np.array([[frame_idx, y, x]], dtype=float)
+                if data.size == 0:
+                    data = new_row
+                else:
+                    data = np.vstack([data, new_row])
+
+                new_feat = pd.DataFrame({
+                    "bodypart": [bp],
+                    "frame": [frame_idx],
+                    "individual": [ind],
+                })
+                features = pd.concat([features, new_feat], ignore_index=True)
+
+            point_layer.data = data
+            point_layer.features = features
+            point_layer.text = {
+                "string": "{bodypart}",
+                "size": 8,
+                "color": "white",
+                "translation": np.array([0, -8, 8]),
+            }
+        else:
+            # fallback: redraw frame if layer doesn't exist yet
+            self.current_frame_idx = frame_idx
+            self._draw_current_frame_points()
+
+        # 3. commit immediately
+        self.current_frame_idx = frame_idx
+        self._commit_current_frame_points()
+
+        self.status.setText(f"Added {bp} for {ind} at frame {frame_idx}.")
+        pass
     # ----------------------------
     # annotation
     # ----------------------------
@@ -512,6 +691,64 @@ class AnnotatorWidget(QWidget):
     # ----------------------------
     # saving
     # ----------------------------
+
+    def apply_edits_to_dataframe(self):
+        if self.dlc_df is None or self.scorer is None:
+            return
+
+        for e in self.edits:
+            if e.type == "blank":
+                ind = e.ind
+                if ind is None:
+                    continue
+
+                for frame_idx in range(e.t0_frame, e.t1_frame + 1):
+                    for bp in self.bodyparts:
+                        x_col = (self.scorer, ind, bp, "x")
+                        y_col = (self.scorer, ind, bp, "y")
+                        lk_col = (self.scorer, ind, bp, "likelihood")
+
+                        if x_col in self.dlc_df.columns:
+                            self.dlc_df.at[frame_idx, x_col] = np.nan
+                        if y_col in self.dlc_df.columns:
+                            self.dlc_df.at[frame_idx, y_col] = np.nan
+                        if lk_col in self.dlc_df.columns:
+                            self.dlc_df.at[frame_idx, lk_col] = np.nan
+            elif e.type == "swap":
+                a = e.a
+                b = e.b
+
+                if a is None or b is None:
+                    continue
+
+                for frame_idx in range(e.t0_frame, e.t1_frame + 1):
+                    for bp in self.bodyparts:
+                        ax = (self.scorer, a, bp, "x")
+                        ay = (self.scorer, a, bp, "y")
+                        al = (self.scorer, a, bp, "likelihood")
+
+                        bx = (self.scorer, b, bp, "x")
+                        by = (self.scorer, b, bp, "y")
+                        bl = (self.scorer, b, bp, "likelihood")
+
+                        if (
+                            ax in self.dlc_df.columns and ay in self.dlc_df.columns and
+                            bx in self.dlc_df.columns and by in self.dlc_df.columns
+                        ):
+                            tmp_x = self.dlc_df.at[frame_idx, ax]
+                            tmp_y = self.dlc_df.at[frame_idx, ay]
+                            tmp_l = self.dlc_df.at[frame_idx, al] if al in self.dlc_df.columns else np.nan
+
+                            self.dlc_df.at[frame_idx, ax] = self.dlc_df.at[frame_idx, bx]
+                            self.dlc_df.at[frame_idx, ay] = self.dlc_df.at[frame_idx, by]
+                            if al in self.dlc_df.columns and bl in self.dlc_df.columns:
+                                self.dlc_df.at[frame_idx, al] = self.dlc_df.at[frame_idx, bl]
+
+                            self.dlc_df.at[frame_idx, bx] = tmp_x
+                            self.dlc_df.at[frame_idx, by] = tmp_y
+                            if al in self.dlc_df.columns and bl in self.dlc_df.columns:
+                                self.dlc_df.at[frame_idx, bl] = tmp_l
+
     def save_json(self):
         if not self.edits:
             self.status.setText("No edits to save.")
@@ -533,8 +770,11 @@ class AnnotatorWidget(QWidget):
             self.status.setText("No DLC dataframe loaded.")
             return
 
-        # make sure current-frame drags are saved
+        # save any current-frame point edits first
         self._commit_current_frame_points()
+
+        # apply blank/swap annotations to dataframe
+        self.apply_edits_to_dataframe()
 
         default_name = "corrected_filtered.h5"
         if self.h5_path is not None:
@@ -550,11 +790,12 @@ class AnnotatorWidget(QWidget):
         if not path:
             return
 
-        self.dlc_df.to_hdf(path, key="df", mode="w")
-
-        if self.edits:
-            edits_df = pd.DataFrame([asdict(e) for e in self.edits])
-            edits_df.to_hdf(path, key="annotations", mode="a")
+        self.dlc_df.to_hdf(
+            path,
+            key="df_with_missing",
+            mode="w",
+            format="table"
+        )
 
         self.status.setText(f"Saved corrected H5 -> {os.path.basename(path)}")
 
@@ -581,5 +822,7 @@ class AnnotatorWidget(QWidget):
         if self.individuals:
             msg += f" | inds={len(self.individuals)}"
 
-        self.status.setText(msg)
+        if self.add_point_mode:
+            msg += " | add-point mode ON"
 
+        self.status.setText(msg)
